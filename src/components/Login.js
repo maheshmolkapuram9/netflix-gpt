@@ -1,12 +1,101 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import Header from "./Header";
 import { assetsList } from "../utils/assets";
+import { loginValidation } from "../utils/loginValidation";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+} from "firebase/auth";
+import { auth } from "../utils/firebase";
+import { useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
+import { addUser } from "../store/userSlice";
 
 const Login = () => {
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+
   const [signIn, setSignIn] = useState(true);
+  const [validationError, setValidationError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const userNameRef = useRef(null);
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
 
   const handleToggleSignin = () => {
+    setValidationError(null);
     setSignIn(!signIn);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setLoading(true);
+    console.log("Loading ", loading);
+
+    const validation = loginValidation(
+      userNameRef?.current?.value,
+      emailRef?.current?.value,
+      passwordRef?.current?.value,
+      signIn,
+    );
+
+    setValidationError(validation);
+
+    if (validation) {
+      setLoading(false);
+      return;
+    }
+
+    if (!signIn) {
+      // signup logic
+      createUserWithEmailAndPassword(
+        auth,
+        emailRef?.current?.value,
+        passwordRef?.current?.value,
+      )
+        .then((userCredential) => {
+          // Signed up
+          updateProfile(auth.currentUser, {
+            displayName: userNameRef.current.value,
+            photoURL: "https://example.com/jane-q-user/profile.jpg",
+          })
+            .then(() => {
+              // Profile updated!
+              const { uid, email, displayName, photoURL } = auth.currentUser;
+              dispatch(addUser({ uid, email, displayName, photoURL }));
+              navigate("/browse");
+            })
+            .catch((error) => {
+              console.log("An Error occured in Updating Profile", error);
+            });
+        })
+        .catch((error) => {
+          const errorCode = error.code;
+          const errorMessage = error.message;
+          setValidationError({ error: errorCode + "-" + errorMessage });
+        });
+    } else {
+      // signin logic
+      signInWithEmailAndPassword(
+        auth,
+        emailRef?.current?.value,
+        passwordRef?.current?.value,
+      )
+        .then((userCredential) => {
+          // signed In
+          const user = userCredential.user;
+          console.log("logedIn", user);
+          navigate("/browse");
+        })
+        .catch((error) => {
+          const errorCode = error.code;
+          const errorMessage = error.message;
+          setValidationError({ error: errorCode + "-" + errorMessage });
+        });
+    }
+    setLoading(false);
   };
 
   return (
@@ -18,6 +107,7 @@ const Login = () => {
         </h1>
         {!signIn && (
           <input
+            ref={userNameRef}
             type="text"
             placeholder="UserName"
             className="p-4 bg-gray-400/30 block mb-4 w-full border rounded-md border-white"
@@ -25,17 +115,41 @@ const Login = () => {
         )}
 
         <input
+          ref={emailRef}
           type="email"
+          autoComplete="username"
           placeholder="Email"
           className="p-4 bg-gray-400/30 block mb-4 w-full border rounded-md border-white"
         />
         <input
+          ref={passwordRef}
           type="password"
           placeholder="Password"
+          autoComplete={signIn ? "current-password" : "new-password"}
           className="p-4 bg-gray-400/30 block mb-4 w-full border rounded-md border-white"
         />
-        <button className="bg-red-600 w-full p-3 rounded-md">
-          {signIn ? "Sign in" : "Sign up"}
+        {validationError && (
+          <div>
+            <p className="text-red-600 border border-red-400 rounded-md px-4 mb-3 animate-pulse">
+              {validationError?.error}
+            </p>
+            <ul className="mb-3">
+              {validationError?.conditions &&
+                validationError?.conditions.map((condition, index) => {
+                  return (
+                    <li key={index} className="list-disc">
+                      {condition}
+                    </li>
+                  );
+                })}
+            </ul>
+          </div>
+        )}
+        <button
+          className="bg-red-600 w-full p-3 rounded-md"
+          onClick={handleSubmit}
+        >
+          {!loading ? (signIn ? "Sign in" : "Sign up") : "Loading..."}
         </button>
         {signIn && (
           <>
